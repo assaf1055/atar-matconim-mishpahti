@@ -68,7 +68,6 @@
         const db = getFirestore(app);
         const appId = 'recipe-family-shared';
 
-        // --- הקוד המקורי שלך (ללא שינוי) ---
         const App = () => {
           const [authReady, setAuthReady] = useState(false);
           const [viewMode, setViewMode] = useState('all');
@@ -163,7 +162,7 @@
             try {
               const updated = {
                 title: editForm.title, author: editForm.author || "",
-                ingredients: typeof editForm.ingredients === 'string' ? editForm.ingredients.split(/[,\n]/).map(i => i.trim()) : editForm.ingredients,
+                ingredients: typeof editForm.ingredients === 'string' ? editForm.ingredients.split('\n').map(i => i.trim()).filter(i => i !== "") : editForm.ingredients,
                 instructions: editForm.instructions || ""
               };
               await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'family_recipes', selectedRecipe.id), updated);
@@ -192,7 +191,6 @@
           return (
             <div className="min-h-screen bg-slate-50 text-slate-800 selection:bg-orange-100 font-varela" dir="rtl">
               
-              {/* Sidebar Menu */}
               <aside className={`fixed top-0 right-0 h-full w-full max-w-xs bg-white z-[100] shadow-2xl transform transition-transform duration-300 ${isMenuOpen ? 'translate-x-0' : 'translate-x-full'}`}>
                 <div className="p-6 h-full flex flex-col">
                   <div className="flex justify-between items-center mb-8 border-b pb-4"><h2 className="text-xl font-black text-orange-600 flex items-center gap-2"><BookHeart size={24} /> ספר המשפחה</h2><button onClick={() => setIsMenuOpen(false)} className="p-2 hover:bg-slate-100 rounded-full"><X /></button></div>
@@ -203,11 +201,10 @@
                 </div>
               </aside>
 
-              {/* Header */}
               <header className="bg-white/80 backdrop-blur-lg sticky top-0 z-50 border-b border-slate-100 shadow-sm h-24 flex items-center px-4">
                 <div className="max-w-6xl mx-auto w-full flex items-center justify-between gap-4">
                   <button onClick={() => setIsMenuOpen(true)} className="p-3 hover:bg-slate-100 rounded-2xl"><Menu size={28} /></button>
-                  <div className="relative flex-1 max-w-xl">
+                  <div className="relative flex-1 max-xl">
                     <input type="text" placeholder="חיפוש מתכון..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full bg-slate-100 border-2 border-transparent focus:border-orange-400 focus:bg-white rounded-2xl py-4 pr-12 pl-4 outline-none text-lg font-bold" />
                     <Search className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400" size={24} />
                   </div>
@@ -215,7 +212,6 @@
                 </div>
               </header>
 
-              {/* Main Content */}
               <main className="max-w-6xl mx-auto px-4 py-12">
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
                   {filteredRecipes.map((recipe) => (
@@ -233,7 +229,6 @@
                 </div>
               </main>
 
-              {/* Modals - Add & View */}
               {isAddModalOpen && (
                 <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
                   <div className="bg-white w-full max-w-2xl max-h-[90vh] rounded-[3rem] shadow-2xl overflow-hidden flex flex-col border border-slate-100">
@@ -249,7 +244,6 @@
                 </div>
               )}
 
-              {/* View/Edit Modal (שיחזרתי מילה במילה מהקוד המקורי) */}
               {selectedRecipe && (
                 <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
                   <div className="bg-white w-full max-w-3xl max-h-[90vh] rounded-[3rem] shadow-2xl relative overflow-hidden flex flex-col border border-slate-100 text-right">
@@ -265,13 +259,15 @@
                     <div className="p-10 overflow-y-auto flex-1 font-bold">
                         {isEditing ? (
                             <div className="space-y-6">
-                                <input type="text" value={editForm.title} onChange={e => setEditForm({...editForm, title: e.target.value})} className="w-full bg-slate-50 border-2 p-4 rounded-xl outline-none focus:border-orange-500" />
-                                <textarea rows="8" value={editForm.instructions} onChange={e => setEditForm({...editForm, instructions: e.target.value})} className="w-full bg-slate-50 border-2 p-4 rounded-xl outline-none focus:border-orange-500 resize-none" />
+                                <div><label className="block text-sm text-slate-400 mb-1">שם המנה</label><input type="text" value={editForm.title} onChange={e => setEditForm({...editForm, title: e.target.value})} className="w-full bg-slate-50 border-2 p-4 rounded-xl outline-none focus:border-orange-500" /></div>
+                                <div><label className="block text-sm text-slate-400 mb-1">באדיבות (מעלה המתכון)</label><input type="text" value={editForm.author} onChange={e => setEditForm({...editForm, author: e.target.value})} className="w-full bg-slate-50 border-2 p-4 rounded-xl outline-none focus:border-orange-500" /></div>
+                                <div><label className="block text-sm text-slate-400 mb-1">מצרכים (כל מצרך בשורה חדשה)</label><textarea rows="5" value={editForm.ingredients} onChange={e => setEditForm({...editForm, ingredients: e.target.value})} className="w-full bg-slate-50 border-2 p-4 rounded-xl outline-none focus:border-orange-500 resize-none" /></div>
+                                <div><label className="block text-sm text-slate-400 mb-1">הוראות הכנה</label><textarea rows="8" value={editForm.instructions} onChange={e => setEditForm({...editForm, instructions: e.target.value})} className="w-full bg-slate-50 border-2 p-4 rounded-xl outline-none focus:border-orange-500 resize-none" /></div>
                                 <div className="flex gap-4 pt-4"><button onClick={() => setIsEditing(false)} className="flex-1 py-4 bg-slate-100 rounded-2xl">ביטול</button><button onClick={handleSaveEdit} className="flex-1 py-4 bg-orange-600 text-white font-black rounded-2xl shadow-xl">שמור</button></div>
                             </div>
                         ) : (
                             <div className="space-y-12">
-                                <div><h3 className="text-2xl font-black text-slate-800 mb-6 flex items-center gap-3"><div className="p-2 bg-orange-100 text-orange-600 rounded-xl"><UtensilsCrossed size={24}/></div> מצרכים</h3><ul className="grid grid-cols-1 sm:grid-cols-2 gap-4">{selectedRecipe.ingredients?.map((ing, i) => <li key={i} className="bg-slate-50 p-4 rounded-2xl border flex items-start gap-3"><div className="w-2 h-2 bg-orange-400 rounded-full mt-2" /><span>{ing}</span></li>)}</ul></div>
+                                <div><h3 className="text-2xl font-black text-slate-800 mb-6 flex items-center gap-3"><div className="p-2 bg-orange-100 text-orange-600 rounded-xl"><UtensilsCrossed size={24}/></div> מצרכים</h3><ul className="grid grid-cols-1 sm:grid-cols-2 gap-4">{selectedRecipe.ingredients?.map((ing, i) => <li key={i} className="bg-slate-50 p-4 rounded-2xl border flex items-start gap-3 shadow-sm"><div className="w-2 h-2 bg-orange-400 rounded-full mt-2" /><span>{ing}</span></li>)}</ul></div>
                                 <div><h3 className="text-2xl font-black text-slate-800 mb-6 flex items-center gap-3"><div className="p-2 bg-orange-100 text-orange-600 rounded-xl"><Clock size={24}/></div> אופן ההכנה</h3><div className="whitespace-pre-wrap leading-relaxed bg-orange-50/30 p-8 rounded-[2rem] border text-lg shadow-inner">{selectedRecipe.instructions}</div></div>
                             </div>
                         )}
