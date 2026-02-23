@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ספר המתכונים המשפחתי</title>
+    
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@18.2.0",
+        "react-dom": "https://esm.sh/react-dom@18.2.0",
+        "lucide-react": "https://esm.sh/lucide-react@0.344.0",
+        "firebase/app": "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js",
+        "firebase/firestore": "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js",
+        "firebase/auth": "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js"
+      }
+    }
+    </script>
+
+    <link href="https://fonts.googleapis.com/css2?family=Varela+Round&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Varela Round', sans-serif; }
+        .font-varela { font-family: 'Varela Round', sans-serif; }
+    </style>
+</head>
+<body class="bg-slate-50">
+    <div id="root"></div>
+
+    <script type="text/babel" data-type="module">
+        import React, { useState, useMemo, useEffect, useRef } from 'react';
+        import { createRoot } from 'react-dom';
+        import { 
+          Search, Plus, X, UtensilsCrossed, Clock, 
+          AlertCircle, Eye, Check, Trash2, Edit3, ArrowRight, 
+          Loader2, Menu, Heart, Info, ChefHat, BookHeart
+        } from 'lucide-react';
+
+        import { initializeApp } from 'firebase/app';
+        import { 
+          getFirestore, collection, onSnapshot, addDoc, 
+          deleteDoc, updateDoc, doc
+        } from 'firebase/firestore';
+        import { 
+          getAuth, 
+          signInAnonymously,
+          onAuthStateChanged
+        } from 'firebase/auth';
+
+        // --- Firebase Config המאומת שלך ---
+        const firebaseConfig = {
+          apiKey: "AIzaSyAO0ohZaZKbc1KD5paahk5V6r412pFe-38",
+          authDomain: "atar-matconim.firebaseapp.com",
+          projectId: "atar-matconim",
+          storageBucket: "atar-matconim.firebasestorage.app",
+          messagingSenderId: "533416888164",
+          appId: "1:533416888164:web:04127c9ef7784c42ff9c71",
+          measurementId: "G-GS2GVQKL8L"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const appId = 'recipe-family-shared';
+
+        // --- הקוד המקורי שלך (ללא שינוי) ---
+        const App = () => {
+          const [authReady, setAuthReady] = useState(false);
+          const [viewMode, setViewMode] = useState('all');
+          const [isActionLoading, setIsActionLoading] = useState(false);
+          const [recipes, setRecipes] = useState([]);
+          const [localFavorites, setLocalFavorites] = useState(() => {
+            try {
+              const saved = localStorage.getItem(`family_favs_${appId}`);
+              return saved ? JSON.parse(saved) : [];
+            } catch (e) { return []; }
+          });
+          const [searchQuery, setSearchQuery] = useState("");
+          const [isMenuOpen, setIsMenuOpen] = useState(false);
+          const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+          const [selectedRecipe, setSelectedRecipe] = useState(null);
+          const [recipeToDelete, setRecipeToDelete] = useState(null);
+          const [isEditing, setIsEditing] = useState(false);
+          const [statusMessage, setStatusMessage] = useState(null);
+          const [newRecipe, setNewRecipe] = useState({ title: "", ingredients: "", instructions: "", author: "" });
+          const [editForm, setEditForm] = useState({ title: "", ingredients: "", instructions: "", author: "" });
+          const formScrollRef = useRef(null);
+
+          useEffect(() => {
+            signInAnonymously(auth).catch(e => console.error("Auth error:", e));
+            const unsubscribe = onAuthStateChanged(auth, (user) => { setAuthReady(!!user); });
+            return () => unsubscribe();
+          }, []);
+
+          useEffect(() => {
+            if (!authReady) return;
+            const recipesCol = collection(db, 'artifacts', appId, 'public', 'data', 'family_recipes');
+            const unsubscribe = onSnapshot(recipesCol, (snap) => {
+              const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+              setRecipes(data.sort((a, b) => (b.createdAtTimestamp || 0) - (a.createdAtTimestamp || 0)));
+            }, (err) => {
+              console.error(err);
+              showStatus("שגיאה בטעינת מתכונים", "error");
+            });
+            return () => unsubscribe();
+          }, [authReady]);
+
+          useEffect(() => {
+            localStorage.setItem(`family_favs_${appId}`, JSON.stringify(localFavorites));
+          }, [localFavorites]);
+
+          const showStatus = (msg, type = "info") => {
+            setStatusMessage({ msg, type });
+            setTimeout(() => setStatusMessage(null), 4000);
+          };
+
+          const toggleFavorite = (e, recipeId) => {
+            if (e) e.stopPropagation();
+            if (localFavorites.includes(recipeId)) {
+              setLocalFavorites(localFavorites.filter(id => id !== recipeId));
+              showStatus("הוסר מהמועדפים שלך", "info");
+            } else {
+              setLocalFavorites([...localFavorites, recipeId]);
+              showStatus("נשמר במועדפים!", "success");
+            }
+          };
+
+          const handleAddRecipe = async (e) => {
+            e.preventDefault();
+            if (!newRecipe.title.trim()) return;
+            setIsActionLoading(true);
+            try {
+              await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'family_recipes'), {
+                ...newRecipe,
+                ingredients: newRecipe.ingredients ? newRecipe.ingredients.split(/[,\n]/).map(i => i.trim()).filter(i => i !== "") : [],
+                createdAt: new Date().toLocaleDateString('he-IL'),
+                createdAtTimestamp: Date.now(),
+                author: newRecipe.author.trim()
+              });
+              setNewRecipe({ title: "", ingredients: "", instructions: "", author: "" });
+              setIsAddModalOpen(false);
+              showStatus("המתכון נשמר בהצלחה!", "success");
+            } catch (err) { showStatus("שגיאה בשמירה", "error"); }
+            finally { setIsActionLoading(false); }
+          };
+
+          const deleteRecipe = async () => {
+            if (!recipeToDelete) return;
+            try {
+              await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'family_recipes', recipeToDelete.id));
+              setRecipeToDelete(null); setSelectedRecipe(null);
+              showStatus("המתכון נמחק", "success");
+            } catch (err) { showStatus("שגיאה במחיקה", "error"); }
+          };
+
+          const handleSaveEdit = async () => {
+            if (!selectedRecipe) return;
+            try {
+              const updated = {
+                title: editForm.title, author: editForm.author || "",
+                ingredients: typeof editForm.ingredients === 'string' ? editForm.ingredients.split(/[,\n]/).map(i => i.trim()) : editForm.ingredients,
+                instructions: editForm.instructions || ""
+              };
+              await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'family_recipes', selectedRecipe.id), updated);
+              setSelectedRecipe({ ...selectedRecipe, ...updated }); setIsEditing(false);
+              showStatus("השינויים נשמרו!", "success");
+            } catch (err) { showStatus("שגיאה בעדכון", "error"); }
+          };
+
+          const openEditMode = () => {
+            setEditForm({ title: selectedRecipe.title, author: selectedRecipe.author || "", ingredients: selectedRecipe.ingredients ? selectedRecipe.ingredients.join("\n") : "", instructions: selectedRecipe.instructions || "" });
+            setIsEditing(true);
+          };
+
+          const filteredRecipes = useMemo(() => {
+            let source = viewMode === 'favorites' ? recipes.filter(r => localFavorites.includes(r.id)) : recipes;
+            if (!searchQuery.trim()) return source;
+            const q = searchQuery.trim().toLowerCase();
+            return source.filter(r => (r.title || "").toLowerCase().includes(q) || (r.author || "").toLowerCase().includes(q))
+              .sort((a, b) => (localFavorites.includes(a.id) ? -1 : 1));
+          }, [searchQuery, recipes, viewMode, localFavorites]);
+
+          if (!authReady) {
+            return <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6" dir="rtl"><Loader2 className="animate-spin text-orange-500 mb-4" size={48} /></div>;
+          }
+
+          return (
+            <div className="min-h-screen bg-slate-50 text-slate-800 selection:bg-orange-100 font-varela" dir="rtl">
+              
+              {/* Sidebar Menu */}
+              <aside className={`fixed top-0 right-0 h-full w-full max-w-xs bg-white z-[100] shadow-2xl transform transition-transform duration-300 ${isMenuOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+                <div className="p-6 h-full flex flex-col">
+                  <div className="flex justify-between items-center mb-8 border-b pb-4"><h2 className="text-xl font-black text-orange-600 flex items-center gap-2"><BookHeart size={24} /> ספר המשפחה</h2><button onClick={() => setIsMenuOpen(false)} className="p-2 hover:bg-slate-100 rounded-full"><X /></button></div>
+                  <div className="flex-1 space-y-4 font-bold">
+                    <button onClick={() => { setViewMode('all'); setIsMenuOpen(false); }} className={`w-full py-4 px-4 rounded-2xl flex items-center gap-3 ${viewMode === 'all' ? 'bg-orange-50 text-orange-600 border-2 border-orange-200' : 'hover:bg-slate-50'}`}><UtensilsCrossed size={20} /> כל המתכונים</button>
+                    <button onClick={() => { setViewMode('favorites'); setIsMenuOpen(false); }} className={`w-full py-4 px-4 rounded-2xl flex items-center gap-3 ${viewMode === 'favorites' ? 'bg-red-50 text-red-500 border-2 border-red-200' : 'hover:bg-slate-50'}`}><Heart size={20} fill={viewMode === 'favorites' ? "currentColor" : "none"} /> מועדפים שלי</button>
+                  </div>
+                </div>
+              </aside>
+
+              {/* Header */}
+              <header className="bg-white/80 backdrop-blur-lg sticky top-0 z-50 border-b border-slate-100 shadow-sm h-24 flex items-center px-4">
+                <div className="max-w-6xl mx-auto w-full flex items-center justify-between gap-4">
+                  <button onClick={() => setIsMenuOpen(true)} className="p-3 hover:bg-slate-100 rounded-2xl"><Menu size={28} /></button>
+                  <div className="relative flex-1 max-w-xl">
+                    <input type="text" placeholder="חיפוש מתכון..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full bg-slate-100 border-2 border-transparent focus:border-orange-400 focus:bg-white rounded-2xl py-4 pr-12 pl-4 outline-none text-lg font-bold" />
+                    <Search className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400" size={24} />
+                  </div>
+                  <button onClick={() => setIsAddModalOpen(true)} className="p-4 bg-orange-600 text-white hover:bg-orange-700 rounded-2xl shadow-lg flex items-center gap-2 font-black shrink-0"><Plus size={24} /> <span className="hidden md:inline">מתכון חדש</span></button>
+                </div>
+              </header>
+
+              {/* Main Content */}
+              <main className="max-w-6xl mx-auto px-4 py-12">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
+                  {filteredRecipes.map((recipe) => (
+                    <div key={recipe.id} className="group relative bg-white rounded-[2.5rem] shadow-sm hover:shadow-2xl transition-all border border-slate-100 overflow-hidden flex flex-col cursor-pointer" onClick={() => setSelectedRecipe(recipe)}>
+                      <button onClick={(e) => { e.stopPropagation(); setRecipeToDelete(recipe); }} className="absolute top-5 left-5 p-3 bg-white/90 text-slate-400 hover:text-red-600 rounded-2xl opacity-0 group-hover:opacity-100 transition-all z-10 font-bold"><Trash2 size={20}/></button>
+                      <button onClick={(e) => toggleFavorite(e, recipe.id)} className="absolute top-5 right-5 p-3 bg-white/90 text-red-500 rounded-2xl shadow-md z-10"><Heart size={24} fill={localFavorites.includes(recipe.id) ? "currentColor" : "none"} /></button>
+                      <div className="h-44 bg-gradient-to-br from-orange-50 to-orange-100/50 flex items-center justify-center border-b border-orange-100/50"><UtensilsCrossed size={72} className="text-orange-200" /></div>
+                      <div className="p-8 flex-1">
+                        <h3 className="text-2xl font-black mb-3 group-hover:text-orange-600 transition-colors line-clamp-2">{recipe.title}</h3>
+                        <p className="text-sm text-slate-500 font-bold mb-4 flex items-center gap-1.5"><ChefHat size={16} className="text-orange-400"/> באדיבות: {recipe.author}</p>
+                        <div className="pt-5 border-t border-slate-100 flex items-center justify-between text-slate-400 text-sm font-bold"><span>{recipe.createdAt}</span><span className="text-orange-600 flex items-center gap-2 font-black">למתכון <ArrowRight size={18} className="rotate-180" /></span></div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </main>
+
+              {/* Modals - Add & View */}
+              {isAddModalOpen && (
+                <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+                  <div className="bg-white w-full max-w-2xl max-h-[90vh] rounded-[3rem] shadow-2xl overflow-hidden flex flex-col border border-slate-100">
+                    <div className="p-8 border-b bg-orange-50/50 flex justify-between items-center"><h2 className="text-3xl font-black text-slate-900 flex items-center gap-3"><UtensilsCrossed className="text-orange-500" /> מתכון חדש למשפחה</h2><button onClick={() => setIsAddModalOpen(false)} className="p-2 hover:bg-white rounded-full text-slate-400 shadow-sm transition-all"><X size={28}/></button></div>
+                    <div className="p-10 overflow-y-auto flex-1"><form onSubmit={handleAddRecipe} className="space-y-6 font-bold text-right">
+                        <input type="text" placeholder="מה מכינים היום?" value={newRecipe.title} onChange={e => setNewRecipe({...newRecipe, title: e.target.value})} className="w-full bg-slate-50 border-2 p-4 rounded-2xl focus:border-orange-500 outline-none text-lg transition-all" required />
+                        <input type="text" placeholder="מי הוסיף את המתכון?" value={newRecipe.author} onChange={e => setNewRecipe({...newRecipe, author: e.target.value})} className="w-full bg-slate-50 border-2 p-4 rounded-2xl focus:border-orange-500 outline-none transition-all" />
+                        <textarea rows="4" placeholder="מצרכים..." value={newRecipe.ingredients} onChange={e => setNewRecipe({...newRecipe, ingredients: e.target.value})} className="w-full bg-slate-50 border-2 p-4 rounded-2xl focus:border-orange-500 outline-none resize-none transition-all" />
+                        <textarea rows="6" placeholder="הוראות הכנה..." value={newRecipe.instructions} onChange={e => setNewRecipe({...newRecipe, instructions: e.target.value})} className="w-full bg-slate-50 border-2 p-4 rounded-2xl focus:border-orange-500 outline-none resize-none transition-all" />
+                        <button type="submit" disabled={isActionLoading} className="w-full py-5 bg-orange-600 text-white font-black rounded-2xl shadow-xl hover:bg-orange-700 transition-all flex items-center justify-center gap-3">{isActionLoading ? <Loader2 className="animate-spin" size={28} /> : <Plus size={28} />} <span className="text-xl">הוסף למחברת המשפחתית</span></button>
+                    </form></div>
+                  </div>
+                </div>
+              )}
+
+              {/* View/Edit Modal (שיחזרתי מילה במילה מהקוד המקורי) */}
+              {selectedRecipe && (
+                <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+                  <div className="bg-white w-full max-w-3xl max-h-[90vh] rounded-[3rem] shadow-2xl relative overflow-hidden flex flex-col border border-slate-100 text-right">
+                    <div className="p-8 border-b bg-slate-50/80 flex justify-between items-start gap-4">
+                      <div className="flex-1 min-w-0 pr-2">
+                        {isEditing ? <h2 className="text-2xl font-black text-orange-600 flex items-center gap-2"><Edit3 size={24}/> עריכה</h2> : <h2 className="text-4xl font-black text-slate-900 leading-tight">{selectedRecipe.title}</h2>}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {!isEditing && <button onClick={openEditMode} className="p-3 bg-white text-slate-600 rounded-2xl border shadow-sm"><Edit3 size={20} /></button>}
+                        <button onClick={() => { setSelectedRecipe(null); setIsEditing(false); }} className="p-3 bg-slate-100 rounded-2xl"><X size={20}/></button>
+                      </div>
+                    </div>
+                    <div className="p-10 overflow-y-auto flex-1 font-bold">
+                        {isEditing ? (
+                            <div className="space-y-6">
+                                <input type="text" value={editForm.title} onChange={e => setEditForm({...editForm, title: e.target.value})} className="w-full bg-slate-50 border-2 p-4 rounded-xl outline-none focus:border-orange-500" />
+                                <textarea rows="8" value={editForm.instructions} onChange={e => setEditForm({...editForm, instructions: e.target.value})} className="w-full bg-slate-50 border-2 p-4 rounded-xl outline-none focus:border-orange-500 resize-none" />
+                                <div className="flex gap-4 pt-4"><button onClick={() => setIsEditing(false)} className="flex-1 py-4 bg-slate-100 rounded-2xl">ביטול</button><button onClick={handleSaveEdit} className="flex-1 py-4 bg-orange-600 text-white font-black rounded-2xl shadow-xl">שמור</button></div>
+                            </div>
+                        ) : (
+                            <div className="space-y-12">
+                                <div><h3 className="text-2xl font-black text-slate-800 mb-6 flex items-center gap-3"><div className="p-2 bg-orange-100 text-orange-600 rounded-xl"><UtensilsCrossed size={24}/></div> מצרכים</h3><ul className="grid grid-cols-1 sm:grid-cols-2 gap-4">{selectedRecipe.ingredients?.map((ing, i) => <li key={i} className="bg-slate-50 p-4 rounded-2xl border flex items-start gap-3"><div className="w-2 h-2 bg-orange-400 rounded-full mt-2" /><span>{ing}</span></li>)}</ul></div>
+                                <div><h3 className="text-2xl font-black text-slate-800 mb-6 flex items-center gap-3"><div className="p-2 bg-orange-100 text-orange-600 rounded-xl"><Clock size={24}/></div> אופן ההכנה</h3><div className="whitespace-pre-wrap leading-relaxed bg-orange-50/30 p-8 rounded-[2rem] border text-lg shadow-inner">{selectedRecipe.instructions}</div></div>
+                            </div>
+                        )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {recipeToDelete && (
+                <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+                  <div className="bg-white rounded-[2.5rem] p-8 max-w-sm w-full text-center shadow-2xl border border-slate-100">
+                    <div className="w-20 h-20 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto mb-6"><Trash2 size={40} /></div>
+                    <h3 className="text-2xl font-black mb-3">מחיקת מתכון?</h3>
+                    <div className="flex gap-3 font-bold"><button onClick={() => setRecipeToDelete(null)} className="flex-1 py-4 bg-slate-100 rounded-2xl font-bold">ביטול</button><button onClick={deleteRecipe} className="flex-1 py-4 bg-red-600 text-white rounded-2xl font-bold shadow-lg">מחק</button></div>
+                  </div>
+                </div>
+              )}
+
+              {statusMessage && (
+                <div className={`fixed bottom-12 left-1/2 -translate-x-1/2 px-8 py-4 rounded-full shadow-2xl z-[300] flex items-center gap-3 ${statusMessage.type === 'error' ? 'bg-red-600' : 'bg-slate-900'} text-white font-black animate-bounce`}>
+                  {statusMessage.type === 'error' ? <AlertCircle size={20} /> : <Check size={20} />}
+                  <span>{statusMessage.msg}</span>
+                </div>
+              )}
+              {isMenuOpen && <div className="fixed inset-0 bg-slate-900/20 backdrop-blur-sm z-[90]" onClick={() => setIsMenuOpen(false)} />}
+            </div>
+          );
+        };
+
+        const root = createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
